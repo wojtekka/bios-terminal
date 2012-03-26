@@ -1,62 +1,73 @@
-#asm
-.text
-.org 0x0000
-db 0x55
-db 0xaa
+#undef DEBUG_KEYBOARD
+#undef DEBUG_SERIAL
+#undef DEBUG_TRANSFER
 
-.org 0x1000		/* kod niech zaczyna siê dalej, poniewa¿ kompilator
-			 * wszystkie dane wrzuca od adresu 0. */
-#endasm
-
+#include "loader.asm"
 #include "types.h"
-#include "io.h"
-#include "screen.h"
-#include "keyboard.h"
+#include "io.c"
+#include "screen.c"
+#include "keyboard.c"
+#include "serial.c"
+#include "vt100.c"
 
-void keyboardInit();
-
-void main()
+int main()
 {
-	int x, y;
-	char ch = 0;
-
 	screenInit();
-	
-	screenPutString("BIOS Terminal v0.1\r\n");
-	screenPutString("(C) Copyright 2004 Wojtek Kaniewski <wojtekka@toxygen.net>\r\n\r\n");
 
-	keyboardInit();
+	screenPutString("BIOS Terminal v1.0 build " BUILD "\r\n(C) Copyright 2004 Wojtek Kaniewski <wojtekka@toxygen.net>\r\nPress F12 to configure serial port\r\n\r\n");
 
-	screenPutString("\r\nKeyboard initialized\r\n");
-
-#if 1
-	for (;;) {
-		char ch = keyboardGetChar();
-		
-		screenPutHex(ch);
-	}
-#endif
-
-#if 0
-	screenY = 20;
-
-	for (x = 0; x < 80; x++)
-		screenPutCharInternal(x, 24, ' ', 0x70);
+	serialSetup();
 
 	for (;;) {
-		word i;
 
-		if (ch < 32) {
-			screenPutChar('?');
-			ch++;
-		} else
-			screenPutChar(ch++);
+#ifdef DEBUG_SERIAL
+		byte x, y, a;
 
-		for(i = 0; i < 1000;i++);
+		x = screenX; y = screenY; a = screenAttr;
+		screenX = 30; screenY = 24; screenAttr = 7*16;
+		screenCursorNoUpdate = 1;
+		screenPutString(" s:");
+		screenPutHex((char)((char) serialRxHead - (char) serialRxTail));
+		screenPutString(" i:");
+		screenPutHex(portRead(0x21));
+		screenPutString(" t:");
+		screenPutHex(serialRxTail >> 8);
+		screenPutHex(serialRxTail &255);
+		screenPutString("/h:");
+		screenPutHex(serialRxHead >> 8);
+		screenPutHex(serialRxHead &255);
+		screenPutString(",");
+		screenPutHex(portRead(serialPort+1));
+		screenPutString(",");
+		screenPutHex(serialInterruptLast); // +2
+		screenPutString(",");
+		screenPutHex(portRead(serialPort+3));
+		screenPutString(",");
+		screenPutHex(portRead(serialPort+4));
+		screenPutString(",");
+		screenPutHex(portRead(serialPort+5));
+		screenPutString(",");
+		screenPutHex(portRead(serialPort+6));
+		screenPutString(" k:");
+		screenCursorNoUpdate = 0;
+		screenX = x; screenY = y; screenAttr = a;
+
+		screenCursorUpdate();
+#endif // DEBUG_SERIAL
+
+		if (keyboardPressed()) {
+			char *seq = vtGetChar();
+
+			while (*seq) {
+				serialPutChar(*seq);
+				seq++;
+			}
+		}
+
+		while (serialDataReady()) {
+			char ch = serialGetChar();
+
+			vtPutChar(ch);
+		}
 	}
-#endif
-
 }
-
-#include "init.h"
-
